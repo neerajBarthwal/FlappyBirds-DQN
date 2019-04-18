@@ -11,14 +11,14 @@ GAME = 'bird' # the name of the game being played for log files
 CONFIG = 'nothreshold'
 ACTIONS = 2 # number of valid actions
 GAMMA = 0.99 # decay rate of past observations
-OBSERVATION = 3200#100000. # timesteps to observe before training
+OBSERVATION = 100000. # timesteps to observe before training
 EXPLORE = 2000000. # frames over which to anneal epsilon
 FINAL_EPSILON = 0.0001 # final value of epsilon
-INITIAL_EPSILON = 0.1 # starting value of epsilon
+INITIAL_EPSILON = 0.5 # starting value of epsilon
 REPLAY_MEMORY = 50000 # number of previous transitions to remember
 BATCH_SIZE = 32 # size of minibatch
 FRAME_PER_ACTION = 1
-LEARNING_RATE = 1e-4
+LEARNING_RATE = 1e-6
 
 
 class Qlearn:
@@ -61,7 +61,7 @@ class Qlearn:
     
     def experience_env(self,next_state, action_index, reward, terminal):
 
-        new_state = np.append(self.current_state[:,:,:,1:], next_state, axis=3)
+        new_state = np.append(next_state, self.current_state[:,:,:,:3], axis=3)
         self.replay_memory.append((self.current_state, action_index, reward, new_state,terminal))
         
         if len(self.replay_memory) > OBSERVATION:
@@ -83,7 +83,7 @@ class Qlearn:
         else:
             state = "Train"
         
-        print("TIMESTEP: ", self.timestep, "STATE: ", state, "EPSILON: ", self.epsilon)
+        print("TIMESTEP: ", self.timestep, "STATE: ", state, "EPSILON: ", self.epsilon, "REWARD: ",reward)
     
     def train_network(self):
         # Step 1: obtain random minibatch from replay memory
@@ -104,21 +104,34 @@ class Qlearn:
         
         loss = 0
         targets = np.zeros((state_batch.shape[0], ACTIONS))
-        print(targets.shape)
+        #print(targets.shape)
         for i in range(0, BATCH_SIZE):
             terminal = minibatch[i][4]
             if terminal:
                 targets[i,action_batch[i]] = reward_batch[i]
             else:
-                targets[i,action_batch[i]] = reward_batch[i]+GAMMA*np.max(QValue_batch[i])
-        print(targets)
-        print(targets.shape)
+                targets[i,action_batch[i]] = reward_batch[i]+ (GAMMA*np.max(QValue_batch[i]))
+        #print(targets)
+        #print(targets.shape)
         #targets[range(BATCH_SIZE), action_batch] = reward_batch + GAMMA*np.max(QValue_batch, axis=1)*np.invert(terminal_batch)
         
         loss+=self.active_network.train_on_batch(state_batch,targets)
+        print("LOSS: ",loss)
+        
         
         if self.timestep % 10000 == 0:
             self.update_target_network()
+            #save model and its weights after every 10,000 steps
+            model_json = self.active_network.to_json()
+            with open("model.json","w") as json_file:
+                json_file.write(model_json)
+            print("Active weights: ",self.active_network.get_weights())
+            print("Target Weights: ", self.target_network.get_weights())
+            self.active_network.save_weights("active_model.h5",overwrite=True)
+            self.target_network.save_weights("target_model.h5",overwrite=True)
+            print("Model saved")
+        
+                
         
         # Step 2: calculate y 
 #         y_batch = []
@@ -142,7 +155,7 @@ class Qlearn:
         
         
     def get_action(self):
-        print(self.current_state.shape)
+        #print(self.current_state.shape)
         q_value = self.active_network.predict(self.current_state)
         action = np.zeros(self.actions)
         action_index = 0
@@ -155,6 +168,7 @@ class Qlearn:
                 action_index = np.argmax(q_value)
                 action[action_index] = 1
         else:
+            print("***********************************************************************************88")
             action[0] = 1
             
         if self.epsilon > FINAL_EPSILON and self.timestep > OBSERVATION:
